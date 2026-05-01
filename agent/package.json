@@ -1,0 +1,23 @@
+{
+  "name": "@hr_71_sharma/agent",
+  "version": "1.0.0",
+  "description": "AutoQual AI+ monitoring agent for Node.js applications",
+  "main": "src/index.js",
+  "bin": {
+    "autoqual": "./bin/cli.js"
+  },
+  "keywords": ["monitoring", "observability", "logging", "apm", "autoqual"],
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.6.2",
+    "commander": "^11.1.0",
+    "on-headers": "^1.0.2"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "files": [
+    "src/",
+    "bin/"
+  ]
+}
