@@ -4,6 +4,8 @@ const { emitToProject } = require('../socket/socketHandler');
 const { createAlert } = require('./alertService');
 const { analyzeIssueWithAI } = require('./aiService');
 const { classifyWebRequest } = require('./mlService');
+const { detectAttackPatterns } = require('./patternDetectionService');
+const { recordAndCheck } = require('./sequenceDetectionService');
 
 let watcherInterval = null;
 
@@ -59,6 +61,18 @@ const analyzeIssues = async (project, newLogs, newMetrics) => {
         endpoint: metric.endpoint
       });
     }
+
+    // Sequence/behavior detection (DDoS, scanning, brute force, credential stuffing)
+    // — needs clientIp, which only agents on the updated middleware send. No-op,
+    // not an error, for requests/agents without it.
+    if (metric.clientIp) {
+      const findings = recordAndCheck({
+        projectId, clientIp: metric.clientIp, endpoint: metric.endpoint, statusCode: metric.statusCode
+      });
+      for (const finding of findings) {
+        await detectOrUpdateIssue(project, finding);
+      }
+    }
   }
 
   // Update health score
@@ -74,15 +88,35 @@ const analyzeRequestWithML = async (project, requestFields) => {
     const result = await classifyWebRequest(requestFields);
     if (!result.confident) return;
 
+    const from = requestFields.clientIp ? ` from ${requestFields.clientIp}` : '';
     await detectOrUpdateIssue(project, {
       type: 'anomaly',
       severity: result.confidence > 0.95 ? 'critical' : 'high',
-      title: `Suspicious request detected (${result.source === 'ml-model' ? 'ML model' : 'Groq fallback'}): ${Math.round(result.confidence * 100)}% confidence`,
+      title: `Suspicious request detected${from} (${result.source === 'ml-model' ? 'ML model' : 'Groq fallback'}): ${Math.round(result.confidence * 100)}% confidence`,
       description: result.reasoning || `Classified as ${result.label} by ${result.source}`,
       endpoint: requestFields.endpoint
     });
   } catch (err) {
     console.error('ML request analysis failed:', err.message);
+  }
+};
+
+// Deterministic signature matching — runs on every rawRequest, independent of and
+// in addition to the ML/Groq layer above. Zero external dependency, so it's the one
+// detector guaranteed to keep working even if the ML service AND Groq are both down.
+// Remediation text is baked into the signature, not AI-generated, so it's present
+// immediately regardless of AI service availability.
+const analyzeRequestPatterns = async (project, requestFields) => {
+  const matches = detectAttackPatterns(requestFields);
+  const from = requestFields.clientIp ? ` from ${requestFields.clientIp}` : '';
+  for (const sig of matches) {
+    await detectOrUpdateIssue(project, {
+      type: 'anomaly',
+      severity: sig.severity,
+      title: `${sig.label} detected${from} (pattern match)`,
+      description: `Signature-based detection matched a known ${sig.label} pattern. How to fix: ${sig.remediation}`,
+      endpoint: requestFields.endpoint
+    });
   }
 };
 
@@ -176,4 +210,7 @@ const stopWatchers = () => {
   if (watcherInterval) clearInterval(watcherInterval);
 };
 
-module.exports = { analyzeIssues, analyzeRequestWithML, startWatchers, stopWatchers, updateHealthScore };
+module.exports = {
+  analyzeIssues, analyzeRequestWithML, analyzeRequestPatterns,
+  startWatchers, stopWatchers, updateHealthScore
+};

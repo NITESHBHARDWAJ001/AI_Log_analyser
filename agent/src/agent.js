@@ -25,6 +25,11 @@ class AutoQualAgentClass {
       maxBatchSize = 50,
       hookConsole: shouldHookConsole = true,
       reportSystemMetrics = true,
+      // On by default, like endpoint/method already are — standard for basic
+      // security monitoring (rate limiting, brute-force/DDoS detection) and far
+      // less sensitive than full request capture below. Still opt-out-able since
+      // an IP is personal data under GDPR.
+      captureClientIp = true,
       // Opt-in: sends method/headers/body/query per request to the backend's ML
       // threat-detection pipeline. Off by default because it can carry sensitive
       // data (form fields, tokens in headers) — read the redact* options below
@@ -46,7 +51,7 @@ class AutoQualAgentClass {
 
     this._config = {
       apiKey, projectId, baseUrl, backendUrl, flushInterval, maxBatchSize, reportSystemMetrics,
-      captureRawRequests, captureRawRequestsSampleRate, redactHeaders, redactBodyFields, debug
+      captureClientIp, captureRawRequests, captureRawRequestsSampleRate, redactHeaders, redactBodyFields, debug
     };
     this._sender = new Sender({ apiKey, projectId, backendUrl, debug });
     this._metrics = new Metrics();

@@ -33,6 +33,12 @@ const serializeBody = (body, redactFields) => {
   }
 };
 
+const getClientIp = (req) => {
+  // req.ip respects Express's `trust proxy` setting (X-Forwarded-For) when the
+  // host app has configured it; falls back to the raw socket address otherwise.
+  return req.ip || req.socket?.remoteAddress || req.connection?.remoteAddress || '';
+};
+
 const buildRawRequest = (req, config) => {
   const headers = req.headers || {};
   const header = (name) => {
@@ -43,6 +49,7 @@ const buildRawRequest = (req, config) => {
 
   return {
     method: req.method,
+    clientIp: config.captureClientIp !== false ? getClientIp(req) : '',
     hostHeader: req.httpVersion ? `HTTP/${req.httpVersion}` : '',
     connection: header('connection'),
     accept: header('accept'),
@@ -70,11 +77,13 @@ const autoQualMiddleware = (options = {}) => {
       const method = req.method;
       const statusCode = res.statusCode;
       const config = AutoQualAgent._getConfig();
+      const clientIp = config.captureClientIp !== false ? getClientIp(req) : undefined;
 
       AutoQualAgent._queueMetricFromMiddleware({
         endpoint,
         method,
         statusCode,
+        clientIp,
         responseTime,
         requestCount: 1,
         errorCount: statusCode >= 400 ? 1 : 0

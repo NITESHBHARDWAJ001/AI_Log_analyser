@@ -2,7 +2,14 @@ const mongoose = require('mongoose');
 
 const issueSchema = new mongoose.Schema({
   projectId: { type: String, required: true, index: true },
-  type: { type: String, enum: ['error_spike', 'slow_response', 'memory_leak', 'crash', 'anomaly', 'threshold_breach'], required: true },
+  type: {
+    type: String,
+    enum: [
+      'error_spike', 'slow_response', 'memory_leak', 'crash', 'anomaly', 'threshold_breach',
+      'ddos', 'scanning', 'bruteforce', 'credential_stuffing'
+    ],
+    required: true
+  },
   severity: { type: String, enum: ['low', 'medium', 'high', 'critical'], default: 'medium' },
   title: { type: String, required: true },
   description: { type: String },

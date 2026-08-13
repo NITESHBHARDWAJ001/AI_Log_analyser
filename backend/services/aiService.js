@@ -131,16 +131,33 @@ const callGroq = async (prompt) => {
   throw lastErr || new Error('All Groq keys failed');
 };
 
-// Escapes raw control characters (newlines, tabs) that land inside quoted
-// strings — Groq often emits multi-line code snippets as literal newlines
-// instead of escaped \n, which otherwise breaks JSON.parse.
+// Repairs two common ways Groq produces syntactically-invalid JSON inside its
+// quoted strings:
+//  1. Raw control characters (newlines, tabs) — code snippets emitted as literal
+//     newlines instead of escaped \n.
+//  2. Invalid backslash-escapes like \' — valid in JS/Python string literals
+//     (which is often what's inside a code snippet) but NOT valid JSON; JSON only
+//     recognizes \" \\ \/ \b \f \n \r \t \uXXXX. An unrecognized escape is dropped
+//     (keeping the literal character) since JSON strings don't need to escape
+//     apostrophes at all.
+const VALID_JSON_ESCAPES = new Set(['"', '\\', '/', 'b', 'f', 'n', 'r', 't', 'u']);
+
 const escapeControlCharsInStrings = (raw) => {
   let out = '';
   let inString = false;
-  let escaped = false;
-  for (const ch of raw) {
-    if (escaped) { out += ch; escaped = false; continue; }
-    if (ch === '\\') { out += ch; escaped = true; continue; }
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i];
+    if (ch === '\\' && inString) {
+      const next = raw[i + 1];
+      if (next !== undefined && VALID_JSON_ESCAPES.has(next)) {
+        out += ch + next;
+      } else if (next !== undefined) {
+        out += next; // drop the invalid backslash, keep the literal character
+      }
+      i++;
+      continue;
+    }
+    if (ch === '\\') { out += ch; continue; }
     if (ch === '"') { inString = !inString; out += ch; continue; }
     if (inString && ch === '\n') { out += '\\n'; continue; }
     if (inString && ch === '\r') { out += '\\r'; continue; }

@@ -5,7 +5,7 @@ const Log = require('../models/Log');
 const Metric = require('../models/Metric');
 const Project = require('../models/Project');
 const { emitToProject } = require('../socket/socketHandler');
-const { analyzeIssues, analyzeRequestWithML } = require('../services/watcherService');
+const { analyzeIssues, analyzeRequestWithML, analyzeRequestPatterns } = require('../services/watcherService');
 
 // POST /api/ingest
 router.post('/', agentAuth, async (req, res) => {
@@ -33,11 +33,14 @@ router.post('/', agentAuth, async (req, res) => {
       savedLogs.push(saved);
       emitToProject(projectId, 'log-update', saved);
 
-      // Optional: agent can attach raw HTTP request fields for ML-based attack
-      // detection (not persisted on the Log itself — used transiently here only).
+      // Optional: agent can attach raw HTTP request fields for attack detection
+      // (not persisted on the Log itself — used transiently here only). Pattern
+      // matching is deterministic and runs regardless of ML/Groq availability;
+      // ML/Groq classification runs alongside it for nuance patterns can't catch.
       if (log.rawRequest) {
-        analyzeRequestWithML(project, { ...log.rawRequest, endpoint: log.endpoint || endpoint })
-          .catch(console.error);
+        const requestFields = { ...log.rawRequest, endpoint: log.endpoint || endpoint };
+        analyzeRequestPatterns(project, requestFields).catch(console.error);
+        analyzeRequestWithML(project, requestFields).catch(console.error);
       }
     }
 
@@ -48,6 +51,7 @@ router.post('/', agentAuth, async (req, res) => {
         endpoint: metric.endpoint || endpoint,
         method: metric.method,
         statusCode: metric.statusCode,
+        clientIp: metric.clientIp,
         responseTime: metric.responseTime,
         memoryUsage: metric.memoryUsage,
         cpuUsage: metric.cpuUsage,

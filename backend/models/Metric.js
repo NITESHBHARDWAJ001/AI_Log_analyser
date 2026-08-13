@@ -5,6 +5,7 @@ const metricSchema = new mongoose.Schema({
   endpoint: { type: String },
   method: { type: String },
   statusCode: { type: Number },
+  clientIp: { type: String },
   responseTime: { type: Number },
   memoryUsage: { type: Number },
   cpuUsage: { type: Number },
