@@ -134,10 +134,10 @@ export default function ProjectSetup() {
 
             <div className="bg-surface-700 rounded-lg p-4">
               <p className="text-xs text-slate-400 mb-2">Install & initialize:</p>
-              <pre className="text-xs text-green-400 font-mono overflow-x-auto">{`npm install @autoqual/agent
+              <pre className="text-xs text-green-400 font-mono overflow-x-auto">{`npm install @hr_71_sharma/agent
 
 // In your app entry point:
-const { AutoQualAgent } = require('@autoqual/agent');
+const { AutoQualAgent } = require('@hr_71_sharma/agent');
 AutoQualAgent.init({
   apiKey: '${createdProject.apiKey}',
   projectId: '${createdProject.projectId}',

@@ -1,6 +1,10 @@
+const os = require('os');
+
 class Metrics {
   constructor() {
     this._counters = {};
+    this._lastCpuUsage = process.cpuUsage();
+    this._lastCpuTime = Date.now();
   }
 
   increment(key, value = 1) {
@@ -34,6 +38,26 @@ class Metrics {
       user: Math.round(usage.user / 1000),
       system: Math.round(usage.system / 1000)
     };
+  }
+
+  // % of total system RAM used by this process (rss-based — a steadily
+  // climbing value here is the actual signal of a leak, unlike heapUsed/
+  // heapTotal which is noisy due to GC and heap growth increments).
+  getMemoryUsagePercent() {
+    const mem = process.memoryUsage();
+    return Math.round((mem.rss / os.totalmem()) * 100 * 100) / 100;
+  }
+
+  // % of one CPU core consumed since the last call (diff-based sampling).
+  getCpuUsagePercent() {
+    const now = Date.now();
+    const elapsedMs = now - this._lastCpuTime;
+    const diff = process.cpuUsage(this._lastCpuUsage);
+    this._lastCpuUsage = process.cpuUsage();
+    this._lastCpuTime = now;
+    if (elapsedMs <= 0) return 0;
+    const cpuMs = (diff.user + diff.system) / 1000;
+    return Math.round((cpuMs / elapsedMs) * 100 * 100) / 100;
   }
 }
 

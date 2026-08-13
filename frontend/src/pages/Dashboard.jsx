@@ -73,29 +73,16 @@ export default function Dashboard() {
     }).catch(() => {}).finally(() => setLoading(false));
   }, [activeProject]);
 
-  // AI analysis handler
-  const handleAiRequest = useCallback(async ({ issueId, prompt }) => {
-    if (typeof window.puter === 'undefined') return;
-    try {
-      const response = await window.puter.ai.chat(prompt, { model: 'x-ai/grok-3-fast' });
-      const text = response?.message?.content?.[0]?.text || response?.toString() || '';
-      let parsed;
-      try { parsed = JSON.parse(text.match(/\{[\s\S]*\}/)?.[0] || '{}'); } catch { parsed = { summary: text }; }
-      setAiInsights(prev => [{ issueId, ...parsed, timestamp: new Date() }, ...prev.slice(0, 9)]);
-      setIssues(prev => prev.map(i => i._id === issueId ? { ...i, aiAnalysis: parsed } : i));
-    } catch (err) {
-      console.error('AI analysis error:', err);
-    }
+  // AI analysis result (computed server-side via Groq, pushed over the socket)
+  const handleAiInsight = useCallback((insight) => {
+    const { issueId } = insight;
+    setAiInsights(prev => [insight, ...prev.slice(0, 9)]);
+    setIssues(prev => prev.map(i => i._id === issueId ? { ...i, aiAnalysis: insight } : i));
   }, []);
 
-  // Report AI summary
-  const handleReport = useCallback(async ({ aiPrompt }) => {
-    if (typeof window.puter === 'undefined') return;
-    try {
-      const response = await window.puter.ai.chat(aiPrompt, { model: 'x-ai/grok-3-fast' });
-      const text = response?.message?.content?.[0]?.text || response?.toString() || '';
-      setAiSummary(text);
-    } catch {}
+  // Daily report (AI summary already computed server-side)
+  const handleReport = useCallback(({ aiSummary: summary }) => {
+    if (summary) setAiSummary(summary);
   }, []);
 
   // Socket real-time updates
@@ -113,7 +100,7 @@ export default function Dashboard() {
     onHealth: ({ healthScore, status }) => {
       setOverview(prev => prev ? { ...prev, healthScore, status } : prev);
     },
-    onAiRequest: handleAiRequest,
+    onAiInsight: handleAiInsight,
     onReport: handleReport
   });
 
@@ -168,12 +155,12 @@ export default function Dashboard() {
                 overview={overview}
                 aiSummary={aiSummary}
                 onGenerateSummary={async () => {
-                  if (!overview || typeof window.puter === 'undefined') return;
-                  const { buildDailyReportPrompt } = await import('../utils/aiPrompts');
-                  const prompt = buildDailyReportPrompt(overview, issues.slice(0, 5));
-                  const res = await window.puter.ai.chat(prompt, { model: 'x-ai/grok-3-fast' });
-                  const text = res?.message?.content?.[0]?.text || res?.toString() || '';
-                  setAiSummary(text);
+                  if (!overview) return;
+                  const res = await api.post(`/dashboard/${currentProjectId}/ai-summary`, {
+                    overview,
+                    topIssues: issues.slice(0, 5)
+                  });
+                  setAiSummary(res.data.summary);
                 }}
               />
             </div>

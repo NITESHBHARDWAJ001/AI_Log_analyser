@@ -5,7 +5,7 @@ const Log = require('../models/Log');
 const Metric = require('../models/Metric');
 const Project = require('../models/Project');
 const { emitToProject } = require('../socket/socketHandler');
-const { analyzeIssues } = require('../services/watcherService');
+const { analyzeIssues, analyzeRequestWithML } = require('../services/watcherService');
 
 // POST /api/ingest
 router.post('/', agentAuth, async (req, res) => {
@@ -32,6 +32,13 @@ router.post('/', agentAuth, async (req, res) => {
       });
       savedLogs.push(saved);
       emitToProject(projectId, 'log-update', saved);
+
+      // Optional: agent can attach raw HTTP request fields for ML-based attack
+      // detection (not persisted on the Log itself — used transiently here only).
+      if (log.rawRequest) {
+        analyzeRequestWithML(project, { ...log.rawRequest, endpoint: log.endpoint || endpoint })
+          .catch(console.error);
+      }
     }
 
     // Process metrics

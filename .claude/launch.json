@@ -7,6 +7,20 @@
       "runtimeArgs": ["run", "dev"],
       "cwd": "E:/Ai_logs_checker/frontend",
       "port": 3000
+    },
+    {
+      "name": "autoqual-backend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "cwd": "E:/Ai_logs_checker/backend",
+      "port": 5000
+    },
+    {
+      "name": "ml-service",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "uvicorn", "app.main:app", "--port", "8001"],
+      "cwd": "E:/Ai_logs_checker/ml-service",
+      "port": 8001
     }
   ]
 }

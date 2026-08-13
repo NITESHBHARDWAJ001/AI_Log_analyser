@@ -6,6 +6,7 @@ const Metric = require('../models/Metric');
 const Issue = require('../models/Issue');
 const Alert = require('../models/Alert');
 const Project = require('../models/Project');
+const { generateLiveSummary } = require('../services/aiService');
 
 // GET /api/dashboard/:projectId/overview
 router.get('/:projectId/overview', protect, async (req, res) => {
@@ -44,7 +45,7 @@ router.get('/:projectId/overview', protect, async (req, res) => {
       errorRate: Math.round(errorRate * 100) / 100,
       activeIssues,
       unreadAlerts,
-      healthScore: project?.healthScore || 100,
+      healthScore: project?.healthScore ?? 100,
       status: project?.status || 'active',
       lastSeen: project?.lastSeen
     });
@@ -165,6 +166,17 @@ router.get('/:projectId/chart-data', protect, async (req, res) => {
     ]);
 
     res.json({ logsByHour, responseTimeByHour });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/dashboard/:projectId/ai-summary
+router.post('/:projectId/ai-summary', protect, async (req, res) => {
+  try {
+    const { overview, topIssues = [] } = req.body;
+    const summary = await generateLiveSummary(overview, topIssues);
+    res.json({ summary });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

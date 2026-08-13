@@ -10,7 +10,10 @@ export const useSocket = (projectId, handlers = {}) => {
     if (!projectId) return;
 
     const token = localStorage.getItem('aq_token');
-    const socket = io('/', {
+    const backendUrl = import.meta.env.VITE_BACKEND_URL;
+    const socketUrl = backendUrl ? backendUrl.replace(/\/$/, '') : '/';
+
+    const socket = io(socketUrl, {
       auth: { token },
       transports: ['websocket', 'polling']
     });
@@ -26,7 +29,7 @@ export const useSocket = (projectId, handlers = {}) => {
     socket.on('issue-detected', (data) => handlersRef.current.onIssue?.(data));
     socket.on('alert-new', (data) => handlersRef.current.onAlert?.(data));
     socket.on('health-update', (data) => handlersRef.current.onHealth?.(data));
-    socket.on('ai-analysis-request', (data) => handlersRef.current.onAiRequest?.(data));
+    socket.on('ai-analysis-result', (data) => handlersRef.current.onAiInsight?.(data));
     socket.on('report-generated', (data) => handlersRef.current.onReport?.(data));
 
     socket.on('disconnect', () => console.log('Socket disconnected'));

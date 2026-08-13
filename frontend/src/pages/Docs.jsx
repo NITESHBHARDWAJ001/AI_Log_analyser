@@ -82,22 +82,22 @@ export default function Docs() {
           <Section id="quickstart" title="Quick Start">
             <p className="text-slate-400 mb-4">Get monitoring in under 3 minutes.</p>
             <Code>{`# 1. Install the agent
-npm install @autoqual/agent
+npm install @hr_71_sharma/agent
 
 # 2. Initialize project (interactive setup)
-npx autoqual init
+npx --yes --package @hr_71_sharma/agent autoqual init
 
 # 3. Connect and verify
-npx autoqual connect`}</Code>
+npx --yes --package @hr_71_sharma/agent autoqual connect`}</Code>
             <p className="text-slate-400 mt-4">After running <code className="text-brand-400 bg-surface-700 px-1 rounded">init</code>, follow the prompts to enter your API key and project ID from the dashboard.</p>
           </Section>
 
           <Section id="installation" title="Installation">
             <Sub title="NPM">
-              <Code>{`npm install @autoqual/agent`}</Code>
+              <Code>{`npm install @hr_71_sharma/agent`}</Code>
             </Sub>
             <Sub title="Yarn">
-              <Code>{`yarn add @autoqual/agent`}</Code>
+              <Code>{`yarn add @hr_71_sharma/agent`}</Code>
             </Sub>
             <Sub title="Requirements">
               <ul className="list-disc list-inside text-slate-400 space-y-1 text-sm">
@@ -109,8 +109,8 @@ npx autoqual connect`}</Code>
           </Section>
 
           <Section id="cli" title="CLI Usage">
-            <p className="text-slate-400 mb-4">The CLI is installed globally or via npx:</p>
-            <Code>{`npx autoqual <command> [options]`}</Code>
+            <p className="text-slate-400 mb-4">Run the CLI via npx (recommended) or install globally:</p>
+            <Code>{`npx --yes --package @hr_71_sharma/agent autoqual <command> [options]`}</Code>
 
             <Sub title="Commands">
               <div className="overflow-x-auto">
@@ -151,23 +151,27 @@ npx autoqual connect`}</Code>
 
           <Section id="agent" title="Agent API">
             <Sub title="Initialize">
-              <Code lang="javascript">{`const { AutoQualAgent } = require('@autoqual/agent');
+              <Code lang="javascript">{`const { AutoQualAgent } = require('@hr_71_sharma/agent');
 
 AutoQualAgent.init({
   apiKey: 'aq_your_api_key',
   projectId: 'proj_your_id',
   baseUrl: 'https://api.yourapp.com',
   // Optional:
-  backendUrl: 'http://localhost:5000',  // defaults to AutoQual cloud
-  flushInterval: 5000,   // ms between batch sends (default: 5000)
-  maxBatchSize: 50,       // max logs per batch (default: 50)
-  hookConsole: true,      // intercept console.log/error/warn (default: true)
-  debug: false            // verbose agent logging (default: false)
+  backendUrl: 'http://localhost:5000',  // set this to your deployed backend URL in production
+  flushInterval: 5000,       // ms between batch sends (default: 5000)
+  maxBatchSize: 50,           // max logs per batch (default: 50)
+  hookConsole: true,          // intercept console.log/error/warn (default: true)
+  reportSystemMetrics: true,  // auto-report memory/CPU usage each flush (default: true)
+  debug: false                // verbose agent logging (default: false)
 });`}</Code>
+              <p className="text-slate-400 text-sm mt-2">
+                With <code className="text-brand-400 bg-surface-700 px-1 rounded">reportSystemMetrics</code> on, the agent samples process memory (% of system RAM) and CPU (% of one core) on every flush — no extra code needed. These feed the dashboard's memory-leak detection.
+              </p>
             </Sub>
 
             <Sub title="Manual Logging">
-              <Code lang="javascript">{`const { logger } = require('@autoqual/agent');
+              <Code lang="javascript">{`const { logger } = require('@hr_71_sharma/agent');
 
 logger.info('User logged in', { userId: '123' });
 logger.warn('Rate limit approaching', { current: 95, max: 100 });
@@ -187,7 +191,7 @@ process.on('SIGTERM', async () => {
           <Section id="express" title="Express Middleware">
             <p className="text-slate-400 mb-4">Automatically capture HTTP metrics for every request:</p>
             <Code lang="javascript">{`const express = require('express');
-const { AutoQualAgent, autoQualMiddleware } = require('@autoqual/agent');
+const { AutoQualAgent, autoQualMiddleware } = require('@hr_71_sharma/agent');
 
 const app = express();
 
@@ -206,6 +210,27 @@ app.get('/api/users', (req, res) => {
   res.json({ users: [] });
 });`}</Code>
             <p className="text-slate-400 mt-3 text-sm">The middleware captures: endpoint, method, status code, and response time automatically.</p>
+
+            <Sub title="ML-based attack detection (opt-in)">
+              <p className="text-slate-400 mb-3 text-sm">
+                Enable <code className="text-brand-400 bg-surface-700 px-1 rounded">captureRawRequests</code> to feed
+                method/headers/body/query into AutoQual's ML threat detection. Off by default — request bodies can
+                carry sensitive data, so read the redaction options before turning this on.
+              </p>
+              <Code lang="javascript">{`AutoQualAgent.init({
+  apiKey: process.env.AUTOQUAL_API_KEY,
+  projectId: process.env.AUTOQUAL_PROJECT_ID,
+  captureRawRequests: true,           // default: false
+  captureRawRequestsSampleRate: 1,    // 0-1, lower on high-traffic apps
+  redactHeaders: ['authorization', 'cookie', 'set-cookie'],   // stripped before sending, these are the defaults
+  redactBodyFields: ['password', 'token', 'secret', 'apikey', 'ssn', 'creditcard', 'cvv']  // matched by substring, case-insensitive
+});`}</Code>
+              <p className="text-slate-400 mt-3 text-sm">
+                Redaction happens in the agent, in your process, before anything leaves it — matching field names are
+                replaced with <code className="text-brand-400 bg-surface-700 px-1 rounded">[REDACTED]</code> at any
+                nesting depth in the body, and listed headers are stripped entirely.
+              </p>
+            </Sub>
           </Section>
 
           <Section id="serviceMap" title="Service Map">
@@ -277,7 +302,7 @@ app.get('/api/users', (req, res) => {
             <p className="text-slate-400 mb-4">Connect via Socket.io and join a project room to receive real-time updates.</p>
             <Code lang="javascript">{`import { io } from 'socket.io-client';
 
-const socket = io('http://localhost:5000', {
+const socket = io('https://YOUR_RENDER_BACKEND_URL', {
   auth: { token: 'your_jwt_token' }
 });
 
@@ -290,11 +315,11 @@ socket.on('metrics-update',  (metric)  => console.log('Metric:', metric));
 socket.on('issue-detected',  (issue)   => console.log('Issue:', issue));
 socket.on('alert-new',       (alert)   => console.log('Alert:', alert));
 socket.on('health-update',   (health)  => console.log('Health:', health));
-socket.on('ai-analysis-request', ({ issueId, prompt }) => {
-  // Run puter.ai.chat(prompt) and update the issue
+socket.on('ai-analysis-result', ({ issueId, rootCause, suggestion, codeSnippet, summary }) => {
+  // AI root-cause analysis, already computed server-side via Groq
 });
-socket.on('report-generated', ({ reportId, stats, aiPrompt }) => {
-  // Generate AI report summary
+socket.on('report-generated', ({ reportId, stats, aiSummary }) => {
+  // Daily report, aiSummary already computed server-side via Groq
 });`}</Code>
           </Section>
         </main>

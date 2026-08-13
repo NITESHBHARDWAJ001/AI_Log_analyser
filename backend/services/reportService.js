@@ -6,7 +6,7 @@ const Metric = require('../models/Metric');
 const Issue = require('../models/Issue');
 const Report = require('../models/Report');
 const { sendReportEmail } = require('./alertService');
-const { buildDailyReportPrompt } = require('./aiService');
+const { generateDailyReportSummary } = require('./aiService');
 const { emitToProject } = require('../socket/socketHandler');
 
 const generateReport = async (projectId) => {
@@ -39,11 +39,16 @@ const generateReport = async (projectId) => {
     errorRate: totalMetrics > 0 ? Math.round((errorMetrics / totalMetrics) * 100 * 100) / 100 : 0,
     issueCount: topIssues.filter(i => !i.resolved).length,
     resolvedIssues,
-    healthScore: project?.healthScore || 100
+    healthScore: project?.healthScore ?? 100
   };
 
-  // Get AI summary prompt (emitted to UI for processing)
-  const aiPrompt = buildDailyReportPrompt(stats, topIssues);
+  // Generate AI summary server-side via Groq
+  let aiSummary = 'AI summary unavailable.';
+  try {
+    aiSummary = await generateDailyReportSummary(stats, topIssues);
+  } catch (err) {
+    console.error('AI report summary failed:', err.message);
+  }
 
   const report = await Report.create({
     projectId,
@@ -51,14 +56,14 @@ const generateReport = async (projectId) => {
     period: { start, end },
     stats,
     topIssues: topIssues.map(i => ({ title: i.title, severity: i.severity, count: i.count })),
-    aiSummary: 'Pending AI analysis...' // updated when UI responds
+    aiSummary
   });
 
-  // Emit report generated event with AI prompt
+  // Emit finished report (with AI summary already generated)
   emitToProject(projectId, 'report-generated', {
     reportId: report._id,
     stats,
-    aiPrompt
+    aiSummary
   });
 
   // Send report email (without AI summary initially)

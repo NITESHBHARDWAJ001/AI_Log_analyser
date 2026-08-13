@@ -14,7 +14,7 @@ export default function AISummary({ project, overview, aiSummary, onGenerateSumm
         <div className="flex items-center gap-2">
           <span className="text-lg">🤖</span>
           <h3 className="text-sm font-semibold text-white">AI Summary</h3>
-          <span className="text-xs text-brand-400 bg-brand-500/10 border border-brand-500/20 px-2 py-0.5 rounded-full">Grok</span>
+          <span className="text-xs text-brand-400 bg-brand-500/10 border border-brand-500/20 px-2 py-0.5 rounded-full">Groq</span>
         </div>
         <button
           onClick={handleGenerate}
@@ -36,7 +36,7 @@ export default function AISummary({ project, overview, aiSummary, onGenerateSumm
         ) : (
           <div className="text-sm text-slate-500 italic">
             {project
-              ? 'Click Generate to get an AI-powered health summary using Grok.'
+              ? 'Click Generate to get an AI-powered health summary using Groq.'
               : 'Select a project to enable AI insights.'}
           </div>
         )}

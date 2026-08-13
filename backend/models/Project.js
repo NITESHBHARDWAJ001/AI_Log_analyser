@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID } = require('crypto');
 
 const endpointSchema = new mongoose.Schema({
   method: { type: String, enum: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'], default: 'GET' },
@@ -19,8 +19,8 @@ const projectSchema = new mongoose.Schema({
   baseUrl: { type: String, required: true },
   team: { type: mongoose.Schema.Types.ObjectId, ref: 'Team', required: true },
   owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  apiKey: { type: String, unique: true, default: () => `aq_${uuidv4().replace(/-/g, '')}` },
-  projectId: { type: String, unique: true, default: () => `proj_${uuidv4().replace(/-/g, '').slice(0, 16)}` },
+  apiKey: { type: String, unique: true, default: () => `aq_${randomUUID().replace(/-/g, '')}` },
+  projectId: { type: String, unique: true, default: () => `proj_${randomUUID().replace(/-/g, '').slice(0, 16)}` },
   endpoints: [endpointSchema],
   serviceMap: [serviceMapEntrySchema],
   healthScore: { type: Number, default: 100, min: 0, max: 100 },
@@ -30,7 +30,8 @@ const projectSchema = new mongoose.Schema({
   alertThresholds: {
     errorRate: { type: Number, default: 5 },
     responseTime: { type: Number, default: 2000 },
-    logErrorCount: { type: Number, default: 10 }
+    logErrorCount: { type: Number, default: 10 },
+    memoryUsage: { type: Number, default: 85 }
   }
 }, { timestamps: true });
 

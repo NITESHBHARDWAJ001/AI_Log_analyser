@@ -95,10 +95,10 @@ router.delete('/:id', protect, async (req, res) => {
 // POST /api/projects/:id/regenerate-key
 router.post('/:id/regenerate-key', protect, async (req, res) => {
   try {
-    const { v4: uuidv4 } = require('uuid');
+    const { randomUUID } = require('crypto');
     const project = await Project.findOneAndUpdate(
       { _id: req.params.id, owner: req.user._id },
-      { apiKey: `aq_${uuidv4().replace(/-/g, '')}` },
+      { apiKey: `aq_${randomUUID().replace(/-/g, '')}` },
       { new: true }
     );
     if (!project) return res.status(404).json({ error: 'Project not found' });

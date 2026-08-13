@@ -34,7 +34,7 @@ module.exports = async () => {
     saveConfig(config);
     console.log('\n✓ Config saved to .autoqual.json');
     console.log('\nNext step — test your connection:');
-    console.log('  npx autoqual connect\n');
+    console.log('  npx --yes --package @hr_71_sharma/agent autoqual connect\n');
   } finally {
     rl.close();
   }

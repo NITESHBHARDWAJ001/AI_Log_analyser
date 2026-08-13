@@ -2,7 +2,8 @@ const Issue = require('../models/Issue');
 const Project = require('../models/Project');
 const { emitToProject } = require('../socket/socketHandler');
 const { createAlert } = require('./alertService');
-const { buildIssuePrompt } = require('./aiService');
+const { analyzeIssueWithAI } = require('./aiService');
+const { classifyWebRequest } = require('./mlService');
 
 let watcherInterval = null;
 
@@ -47,10 +48,42 @@ const analyzeIssues = async (project, newLogs, newMetrics) => {
         endpoint: metric.endpoint
       });
     }
+
+    // High memory usage / potential leak
+    if (metric.memoryUsage && metric.memoryUsage > thresholds.memoryUsage) {
+      await detectOrUpdateIssue(project, {
+        type: 'memory_leak',
+        severity: metric.memoryUsage > 95 ? 'critical' : 'high',
+        title: `High memory usage: ${metric.memoryUsage}%`,
+        description: `Memory usage exceeded threshold (${thresholds.memoryUsage}%)${metric.cpuUsage ? `, CPU at ${metric.cpuUsage}%` : ''}`,
+        endpoint: metric.endpoint
+      });
+    }
   }
 
   // Update health score
   await updateHealthScore(project);
+};
+
+// Classifies a raw HTTP request via the ML service (Groq fallback if it's down) and
+// raises an 'anomaly' issue when the verdict clears the confidence threshold. Only runs
+// when the caller actually has raw request data to classify (see routes/ingest.js) —
+// most agents today don't send this, so this is a no-op for them, not an error.
+const analyzeRequestWithML = async (project, requestFields) => {
+  try {
+    const result = await classifyWebRequest(requestFields);
+    if (!result.confident) return;
+
+    await detectOrUpdateIssue(project, {
+      type: 'anomaly',
+      severity: result.confidence > 0.95 ? 'critical' : 'high',
+      title: `Suspicious request detected (${result.source === 'ml-model' ? 'ML model' : 'Groq fallback'}): ${Math.round(result.confidence * 100)}% confidence`,
+      description: result.reasoning || `Classified as ${result.label} by ${result.source}`,
+      endpoint: requestFields.endpoint
+    });
+  } catch (err) {
+    console.error('ML request analysis failed:', err.message);
+  }
 };
 
 const detectOrUpdateIssue = async (project, issueData) => {
@@ -76,14 +109,20 @@ const detectOrUpdateIssue = async (project, issueData) => {
     // Emit new issue to UI
     emitToProject(projectId, 'issue-detected', issue);
 
-    // Trigger AI analysis request to UI
-    const recentLogs = await require('../models/Log').find({ projectId })
-      .sort({ timestamp: -1 }).limit(20);
-    const aiPrompt = buildIssuePrompt(issue, recentLogs);
-    emitToProject(projectId, 'ai-analysis-request', {
-      issueId: issue._id,
-      prompt: aiPrompt
-    });
+    // Trigger AI analysis (server-side via Groq), fire-and-forget
+    require('../models/Log').find({ projectId })
+      .sort({ timestamp: -1 }).limit(20)
+      .then(async (recentLogs) => {
+        const analysis = await analyzeIssueWithAI(issue, recentLogs);
+        issue.aiAnalysis = analysis;
+        await issue.save();
+        emitToProject(projectId, 'ai-analysis-result', {
+          issueId: issue._id,
+          ...analysis,
+          timestamp: new Date()
+        });
+      })
+      .catch(err => console.error('AI analysis failed:', err.message));
 
     // Create alert for critical/high
     if (issue.severity === 'critical' || issue.severity === 'high') {
@@ -137,4 +176,4 @@ const stopWatchers = () => {
   if (watcherInterval) clearInterval(watcherInterval);
 };
 
-module.exports = { analyzeIssues, startWatchers, stopWatchers, updateHealthScore };
+module.exports = { analyzeIssues, analyzeRequestWithML, startWatchers, stopWatchers, updateHealthScore };

@@ -6,7 +6,7 @@ const { Sender } = require('../../sender');
 module.exports = async () => {
   const config = loadConfig();
   if (!config) {
-    console.error('\n✗ No .autoqual.json found. Run: npx autoqual init\n');
+    console.error('\n✗ No .autoqual.json found. Run: npx --yes --package @hr_71_sharma/agent autoqual init\n');
     process.exit(1);
   }
 

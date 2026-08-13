@@ -13,7 +13,7 @@ class Sender {
       headers: {
         'Authorization': `Bearer ${this.apiKey}`,
         'Content-Type': 'application/json',
-        'User-Agent': '@autoqual/agent'
+        'User-Agent': '@hr_71_sharma/agent'
       }
     });
   }

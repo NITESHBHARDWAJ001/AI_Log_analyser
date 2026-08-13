@@ -144,9 +144,9 @@ export default function Landing() {
         <h2 className="text-3xl font-bold text-white text-center mb-4">Get Running in 3 Minutes</h2>
         <p className="text-slate-400 text-center mb-10">No infra to manage. Just install, configure, and go.</p>
         <div className="card space-y-6">
-          <Step n={1} title="Install the agent" code="npm install @autoqual/agent" />
-          <Step n={2} title="Initialize your project" code="npx autoqual init" />
-          <Step n={3} title="Add to your app" code={`const { AutoQualAgent } = require('@autoqual/agent');\nAutoQualAgent.init({ apiKey: 'aq_...', projectId: 'proj_...' });`} />
+          <Step n={1} title="Install the agent" code="npm install @hr_71_sharma/agent" />
+          <Step n={2} title="Initialize your project" code="npx --yes --package @hr_71_sharma/agent autoqual init" />
+          <Step n={3} title="Add to your app" code={`const { AutoQualAgent } = require('@hr_71_sharma/agent');\nAutoQualAgent.init({ apiKey: 'aq_...', projectId: 'proj_...' });`} />
           <Step n={4} title="Open your dashboard and watch logs roll in live" />
         </div>
       </section>
@@ -167,7 +167,7 @@ export default function Landing() {
         <p>© 2025 AutoQual AI+ — Code-Aware Quality Intelligence Platform</p>
         <div className="flex items-center justify-center gap-6 mt-3">
           <Link to="/docs" className="hover:text-slate-300 transition-colors">Docs</Link>
-          <a href="https://www.npmjs.com/package/@autoqual/agent" target="_blank" rel="noreferrer" className="hover:text-slate-300 transition-colors">NPM</a>
+          <a href="https://www.npmjs.com/package/@hr_71_sharma/agent" target="_blank" rel="noreferrer" className="hover:text-slate-300 transition-colors">NPM</a>
           <Link to="/signup" className="hover:text-slate-300 transition-colors">Sign Up</Link>
         </div>
       </footer>

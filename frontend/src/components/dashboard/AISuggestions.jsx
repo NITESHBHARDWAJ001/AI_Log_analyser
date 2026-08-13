@@ -53,7 +53,7 @@ export default function AISuggestions({ insights }) {
       <div className="flex items-center gap-2 mb-3">
         <span>🧠</span>
         <h3 className="text-sm font-semibold text-white">AI Suggestions</h3>
-        <span className="text-xs text-brand-400 bg-brand-500/10 border border-brand-500/20 px-2 py-0.5 rounded-full">Grok</span>
+        <span className="text-xs text-brand-400 bg-brand-500/10 border border-brand-500/20 px-2 py-0.5 rounded-full">Groq</span>
         {insights.length > 0 && (
           <span className="ml-auto text-xs text-slate-500">{insights.length} insight{insights.length !== 1 ? 's' : ''}</span>
         )}
@@ -64,7 +64,7 @@ export default function AISuggestions({ insights }) {
           <div className="flex flex-col items-center justify-center py-8 text-center">
             <div className="text-4xl mb-2">🔮</div>
             <p className="text-sm text-slate-400">AI insights appear here when issues are detected.</p>
-            <p className="text-xs text-slate-500 mt-1">Powered by Grok via Puter.js</p>
+            <p className="text-xs text-slate-500 mt-1">Powered by Groq</p>
           </div>
         ) : (
           insights.map((insight, i) => <InsightCard key={i} insight={insight} />)
