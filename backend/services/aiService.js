@@ -90,6 +90,33 @@ Respond with JSON only:
 }`;
 };
 
+const SECURITY_EVENT_LABELS = [
+  'benign', 'bruteforce_login_server_attempt', 'bruteforce_login_web',
+  'cyberpanel_login_attempt', 'cyberpanel_login_success', 'dir_scan', 'file_inclusion'
+];
+
+const buildSecurityEventClassificationPrompt = (logFields) => {
+  return `You are a security analyst. This is a fallback check because the ML classifier is unavailable — classify the following log line into exactly ONE of these categories:
+- benign: normal, non-suspicious activity
+- bruteforce_login_server_attempt: failed SSH/server login attempt (e.g. "Failed password", "authentication failure", "invalid user")
+- bruteforce_login_web: repeated web login attempts (e.g. POST to a login page)
+- cyberpanel_login_attempt: an attempt to log into a CyberPanel admin interface
+- cyberpanel_login_success: a successful CyberPanel admin login
+- dir_scan: automated directory/endpoint scanning (e.g. scripted tools, unusual user agents probing many paths)
+- file_inclusion: a request trying to include a remote/local file via a URL parameter
+
+LOG TYPE: ${logFields.logType || 'unknown'}
+CLIENT IP: ${logFields.clientIp || 'N/A'}
+MESSAGE: ${logFields.message}
+
+Respond with JSON only:
+{
+  "label": "one of the exact category names above",
+  "confidence": a number between 0 and 1,
+  "reasoning": "one sentence explaining why"
+}`;
+};
+
 const getGroqKeys = () => {
   const fallback = (process.env.GROQ_FALLBACK_KEYS || '').split(',');
   return [process.env.GROQ_API_KEY, ...fallback].map(k => k?.trim()).filter(Boolean);
@@ -233,6 +260,22 @@ const classifyRequestWithGroq = async (requestFields) => {
   };
 };
 
+// Fallback multi-class log classifier used when the ML service is unreachable —
+// asks Groq to pick the same category the security-event model would otherwise pick.
+const classifySecurityEventWithGroq = async (logFields) => {
+  const text = await callGroq(buildSecurityEventClassificationPrompt(logFields));
+  const parsed = parseJsonResponse(text);
+  const label = SECURITY_EVENT_LABELS.includes(parsed.label) ? parsed.label : 'benign';
+  const confidence = typeof parsed.confidence === 'number'
+    ? Math.max(0, Math.min(1, parsed.confidence))
+    : 0.5;
+  return {
+    label,
+    confidence,
+    reasoning: toText(parsed.reasoning) || text
+  };
+};
+
 module.exports = {
   buildIssuePrompt,
   buildDailyReportPrompt,
@@ -240,5 +283,6 @@ module.exports = {
   analyzeIssueWithAI,
   generateDailyReportSummary,
   generateLiveSummary,
-  classifyRequestWithGroq
+  classifyRequestWithGroq,
+  classifySecurityEventWithGroq
 };

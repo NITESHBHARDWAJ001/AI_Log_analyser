@@ -5,24 +5,27 @@ import pandas as pd
 from fastapi import Depends, FastAPI, HTTPException
 
 from .config import settings
+from .feature_engineering.security_event import engineer_features as engineer_security_event_features
 from .feature_engineering.web_attack import engineer_features
 from .registry import registry
-from .schemas import HealthResponse, WebAttackRequest, WebAttackResponse
+from .schemas import (
+    HealthResponse, SecurityEventRequest, SecurityEventResponse, WebAttackRequest, WebAttackResponse,
+)
 from .security import verify_api_key
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ml-service")
 
 WEB_ATTACK_MODEL = "web_attack"
-# Registered once the second .pkl (multi-class security-event classifier) is provided —
-# see README.md "Adding the second model" for the exact steps.
 SECURITY_EVENT_MODEL = "security_event"
+SECURITY_EVENT_LABEL_ENCODER = "security_event_label_encoder"
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     registry.load(WEB_ATTACK_MODEL, "csic_web_attack_model.pkl")
-    # registry.load(SECURITY_EVENT_MODEL, "organization_y_event_classifier.pkl")
+    registry.load(SECURITY_EVENT_MODEL, "organization_y_event_classifier.pkl")
+    registry.load(SECURITY_EVENT_LABEL_ENCODER, "organization_y_label_encoder.pkl")
     yield
 
 
@@ -79,4 +82,40 @@ def predict_web_attack(payload: WebAttackRequest):
         confident=is_anomalous and anomalous_probability >= settings.ANOMALY_CONFIDENCE_THRESHOLD,
         confidence=float(max(proba)),
         anomalous_probability=anomalous_probability,
+    )
+
+
+@app.post("/predict/security-event", response_model=SecurityEventResponse, dependencies=[Depends(verify_api_key)])
+def predict_security_event(payload: SecurityEventRequest):
+    pipeline = registry.get(SECURITY_EVENT_MODEL)
+    label_encoder = registry.get(SECURITY_EVENT_LABEL_ENCODER)
+    if pipeline is None or label_encoder is None:
+        raise HTTPException(status_code=503, detail=f"Model '{SECURITY_EVENT_MODEL}' is not loaded")
+
+    row = {"message": payload.message, "log_type": payload.log_type, "client_ip": payload.client_ip}
+
+    try:
+        df_feat = engineer_security_event_features(pd.DataFrame([row]))
+        proba = pipeline.predict_proba(df_feat)[0]
+        pred_idx = int(pipeline.predict(df_feat)[0])
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("security-event prediction failed")
+        raise HTTPException(status_code=500, detail=f"Prediction failed: {exc}") from exc
+
+    classes = list(pipeline.classes_)  # integer-encoded class indices, e.g. [0..6]
+    label_probabilities = {
+        str(label_encoder.inverse_transform([classes[i]])[0]): float(p)
+        for i, p in enumerate(proba)
+    }
+    predicted_label = str(label_encoder.inverse_transform([pred_idx])[0])
+    is_benign = predicted_label == "benign"
+    confidence = float(max(proba))
+
+    return SecurityEventResponse(
+        model=SECURITY_EVENT_MODEL,
+        label=predicted_label,
+        is_benign=is_benign,
+        confident=(not is_benign) and confidence >= settings.ANOMALY_CONFIDENCE_THRESHOLD,
+        confidence=confidence,
+        label_probabilities=label_probabilities,
     )

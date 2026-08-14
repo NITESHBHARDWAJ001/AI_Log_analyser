@@ -3,7 +3,7 @@ const Project = require('../models/Project');
 const { emitToProject } = require('../socket/socketHandler');
 const { createAlert } = require('./alertService');
 const { analyzeIssueWithAI } = require('./aiService');
-const { classifyWebRequest } = require('./mlService');
+const { classifyWebRequest, classifySecurityEvent } = require('./mlService');
 const { detectAttackPatterns } = require('./patternDetectionService');
 const { recordAndCheck } = require('./sequenceDetectionService');
 
@@ -79,44 +79,115 @@ const analyzeIssues = async (project, newLogs, newMetrics) => {
   await updateHealthScore(project);
 };
 
-// Classifies a raw HTTP request via the ML service (Groq fallback if it's down) and
-// raises an 'anomaly' issue when the verdict clears the confidence threshold. Only runs
-// when the caller actually has raw request data to classify (see routes/ingest.js) —
-// most agents today don't send this, so this is a no-op for them, not an error.
-const analyzeRequestWithML = async (project, requestFields) => {
+// Weighted ensemble of the two request-level detectors: deterministic pattern
+// matching (always available, zero external dependency) and the ML/Groq layer
+// (may be unavailable). 50/50 when both are available; the pattern layer alone
+// carries 100% of the weight when the ML layer is unreachable, so detection
+// degrades gracefully instead of going dark. This also makes the whole system
+// more stable against the ML model's known calibration limits (see
+// notebooks/retrain_web_attack_augmented.py) — a lone weak ML guess can't fire
+// an alert without either corroboration from the deterministic layer or being
+// extremely confident on its own.
+const PATTERN_WEIGHT = Number(process.env.PATTERN_DETECTION_WEIGHT) || 0.5;
+const ML_WEIGHT = Number(process.env.ML_DETECTION_WEIGHT) || 0.5;
+// Deliberately below PATTERN_WEIGHT (0.5) — a deterministic signature match should
+// clear the bar with margin, not sit exactly on the boundary where float rounding
+// or a future weight tweak could flip it.
+const COMBINED_ALERT_THRESHOLD = Number(process.env.COMBINED_ALERT_THRESHOLD) || 0.45;
+
+// classifyWebRequest's `confidence` field means different things depending on
+// `source` (see mlService.js) — this normalizes both into one 0-1 "probability
+// this request is an attack", regardless of which label was actually predicted.
+const toAnomalousProbability = (mlResult) => {
+  if (mlResult.source === 'unavailable') return null;
+  if (mlResult.source === 'ml-model') return mlResult.confidence; // already anomalous-probability
+  // groq-fallback: `confidence` is Groq's confidence in whichever label it picked
+  return mlResult.isAnomalous ? mlResult.confidence : (1 - mlResult.confidence);
+};
+
+const analyzeRequestEnsemble = async (project, requestFields) => {
   try {
-    const result = await classifyWebRequest(requestFields);
-    if (!result.confident) return;
+    const patternMatches = detectAttackPatterns(requestFields);
+    const patternScore = patternMatches.length > 0 ? 1 : 0;
+    const topSignature = patternMatches[0];
+
+    const mlResult = await classifyWebRequest(requestFields);
+    const mlProbability = toAnomalousProbability(mlResult);
+    const mlAvailable = mlProbability !== null;
+
+    const combinedScore = mlAvailable
+      ? PATTERN_WEIGHT * patternScore + ML_WEIGHT * mlProbability
+      : patternScore; // ML down -> pattern layer alone carries full weight
+
+    if (combinedScore < COMBINED_ALERT_THRESHOLD) return;
 
     const from = requestFields.clientIp ? ` from ${requestFields.clientIp}` : '';
+    const scorePct = Math.round(combinedScore * 100);
+    const sourceLabel = !mlAvailable
+      ? 'pattern-only, ML unavailable'
+      : (mlResult.source === 'ml-model' ? 'ML model' : 'Groq fallback');
+
+    let title;
+    let description;
+    if (topSignature) {
+      title = `${topSignature.label} detected${from} (${scorePct}% combined confidence)`;
+      description = `Signature-based detection matched a known ${topSignature.label} pattern` +
+        (mlAvailable ? `, corroborated by ${sourceLabel} at ${Math.round(mlProbability * 100)}% anomalous probability` : ` (${sourceLabel})`) +
+        `. How to fix: ${topSignature.remediation}`;
+    } else {
+      title = `Suspicious request detected${from} (${sourceLabel}, ${scorePct}% combined confidence)`;
+      description = mlResult.reasoning || `Classified as ${mlResult.label} by ${sourceLabel}`;
+    }
+
     await detectOrUpdateIssue(project, {
       type: 'anomaly',
-      severity: result.confidence > 0.95 ? 'critical' : 'high',
-      title: `Suspicious request detected${from} (${result.source === 'ml-model' ? 'ML model' : 'Groq fallback'}): ${Math.round(result.confidence * 100)}% confidence`,
-      description: result.reasoning || `Classified as ${result.label} by ${result.source}`,
+      severity: combinedScore > 0.9 ? 'critical' : 'high',
+      title,
+      description,
       endpoint: requestFields.endpoint
     });
   } catch (err) {
-    console.error('ML request analysis failed:', err.message);
+    console.error('Request ensemble analysis failed:', err.message);
   }
 };
 
-// Deterministic signature matching — runs on every rawRequest, independent of and
-// in addition to the ML/Groq layer above. Zero external dependency, so it's the one
-// detector guaranteed to keep working even if the ML service AND Groq are both down.
-// Remediation text is baked into the signature, not AI-generated, so it's present
-// immediately regardless of AI service availability.
-const analyzeRequestPatterns = async (project, requestFields) => {
-  const matches = detectAttackPatterns(requestFields);
-  const from = requestFields.clientIp ? ` from ${requestFields.clientIp}` : '';
-  for (const sig of matches) {
-    await detectOrUpdateIssue(project, {
-      type: 'anomaly',
-      severity: sig.severity,
-      title: `${sig.label} detected${from} (pattern match)`,
-      description: `Signature-based detection matched a known ${sig.label} pattern. How to fix: ${sig.remediation}`,
-      endpoint: requestFields.endpoint
+// Multi-class security-event model (organization_y_event_classifier) — classifies a
+// single log line into benign / bruteforce / scanning / file-inclusion / CyberPanel
+// admin-panel categories. Runs on every ingested log; the model's own confidence gate
+// (benign is never "confident") keeps this from spamming issues on normal traffic.
+const SECURITY_EVENT_TYPE_MAP = {
+  bruteforce_login_server_attempt: 'bruteforce',
+  bruteforce_login_web: 'bruteforce',
+  dir_scan: 'scanning',
+  file_inclusion: 'anomaly',
+  cyberpanel_login_attempt: 'anomaly',
+  cyberpanel_login_success: 'anomaly'
+};
+
+const analyzeLogWithML = async (project, log) => {
+  if (!log.message) return;
+  try {
+    const result = await classifySecurityEvent({
+      message: log.message,
+      logType: log.logType || 'agent',
+      clientIp: log.clientIp
     });
+    if (!result.confident) return;
+
+    const issueType = SECURITY_EVENT_TYPE_MAP[result.label] || 'anomaly';
+    const readable = result.label.replace(/_/g, ' ');
+    const from = log.clientIp ? ` from ${log.clientIp}` : '';
+    const isCompromise = result.label === 'cyberpanel_login_success';
+
+    await detectOrUpdateIssue(project, {
+      type: issueType,
+      severity: isCompromise ? 'critical' : (result.confidence > 0.95 ? 'high' : 'medium'),
+      title: `${readable} detected${from} (${result.source === 'ml-model' ? 'ML model' : 'Groq fallback'})`,
+      description: result.reasoning || `Log classified as "${result.label}" with ${Math.round(result.confidence * 100)}% confidence`,
+      endpoint: log.endpoint
+    });
+  } catch (err) {
+    console.error('Security-event ML analysis failed:', err.message);
   }
 };
 
@@ -211,6 +282,6 @@ const stopWatchers = () => {
 };
 
 module.exports = {
-  analyzeIssues, analyzeRequestWithML, analyzeRequestPatterns,
+  analyzeIssues, analyzeRequestEnsemble, analyzeLogWithML,
   startWatchers, stopWatchers, updateHealthScore
 };

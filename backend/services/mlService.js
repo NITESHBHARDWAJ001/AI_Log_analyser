@@ -2,7 +2,7 @@
 // Falls back to Groq (via aiService) when the ML service is down, erroring, or
 // hasn't loaded a model — so detection degrades gracefully instead of going dark.
 
-const { classifyRequestWithGroq } = require('./aiService');
+const { classifyRequestWithGroq, classifySecurityEventWithGroq } = require('./aiService');
 
 const ML_SERVICE_URL = (process.env.ML_SERVICE_URL || 'http://localhost:8001').replace(/\/$/, '');
 const ML_SERVICE_API_KEY = process.env.ML_SERVICE_API_KEY || '';
@@ -77,4 +77,63 @@ const classifyWebRequest = async (requestFields) => {
   }
 };
 
-module.exports = { classifyWebRequest };
+const toSecurityEventPayload = (logFields) => ({
+  message: logFields.message || '',
+  log_type: logFields.logType || 'agent',
+  client_ip: logFields.clientIp || ''
+});
+
+const classifySecurityEventWithGroqFallback = async (logFields) => {
+  try {
+    const result = await classifySecurityEventWithGroq(logFields);
+    return {
+      source: 'groq-fallback',
+      label: result.label,
+      isBenign: result.label === 'benign',
+      confident: result.label !== 'benign' && result.confidence >= ANOMALY_CONFIDENCE_THRESHOLD,
+      confidence: result.confidence,
+      reasoning: result.reasoning
+    };
+  } catch (err) {
+    console.error('Groq security-event fallback failed:', err.message);
+    return { source: 'unavailable', label: 'unknown', isBenign: true, confident: false, confidence: 0 };
+  }
+};
+
+// logFields: { message, logType, clientIp } — classifies one log line into one of the
+// security-event model's categories (benign, bruteforce_*, dir_scan, file_inclusion, ...).
+const classifySecurityEvent = async (logFields) => {
+  let timeoutId;
+  try {
+    const controller = new AbortController();
+    timeoutId = setTimeout(() => controller.abort(), ML_SERVICE_TIMEOUT_MS);
+
+    const res = await fetch(`${ML_SERVICE_URL}/predict/security-event`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(ML_SERVICE_API_KEY && { 'X-API-Key': ML_SERVICE_API_KEY })
+      },
+      body: JSON.stringify(toSecurityEventPayload(logFields)),
+      signal: controller.signal
+    });
+
+    if (!res.ok) throw new Error(`ML service returned ${res.status}`);
+    const result = await res.json();
+
+    return {
+      source: 'ml-model',
+      label: result.label,
+      isBenign: result.is_benign,
+      confident: result.confident,
+      confidence: result.confidence
+    };
+  } catch (err) {
+    console.error('ML service unavailable for security-event, falling back to Groq:', err.message);
+    return classifySecurityEventWithGroqFallback(logFields);
+  } finally {
+    clearTimeout(timeoutId);
+  }
+};
+
+module.exports = { classifyWebRequest, classifySecurityEvent };

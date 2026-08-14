@@ -37,6 +37,30 @@ class WebAttackResponse(BaseModel):
     anomalous_probability: float
 
 
+class SecurityEventRequest(BaseModel):
+    message: str
+    log_type: str = "unknown"  # e.g. "access_log", "syslog", "cyberpanel_log", "generic"
+    client_ip: str = ""
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "message": "sshd: Failed password for root from 71.238.128.110 port 51728 ssh2",
+                "log_type": "syslog",
+                "client_ip": "71.238.128.110",
+            }
+        }
+
+
+class SecurityEventResponse(BaseModel):
+    model: str
+    label: str  # e.g. "benign", "dir_scan", "bruteforce_login_web", ...
+    is_benign: bool
+    confident: bool  # non-benign AND above ANOMALY_CONFIDENCE_THRESHOLD
+    confidence: float  # probability of the predicted class
+    label_probabilities: dict[str, float]
+
+
 class HealthResponse(BaseModel):
     status: str
     models_loaded: list[str]

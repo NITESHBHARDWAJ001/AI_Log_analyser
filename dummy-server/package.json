@@ -1,0 +1,16 @@
+{
+  "name": "autoqual-dummy-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A small realistic Express app with the AutoQual agent integrated — a reusable target for generating real traffic (benign and attack) to test the whole detection pipeline end-to-end.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "traffic": "node traffic-generator.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "dotenv": "^16.3.1"
+  }
+}
